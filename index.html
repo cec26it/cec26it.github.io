@@ -244,6 +244,20 @@
                border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#000;}
   .video-embed iframe{position:absolute;inset:0;width:100%;height:100%;border:0;}
 
+  /* meeting schedule (from Google Sheet) */
+  .sched{border:1px solid var(--line);border-radius:12px;background:var(--white);overflow:hidden;max-width:680px;}
+  .sc-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);}
+  .sc-row:last-child{border-bottom:none;}
+  .sc-when{flex:1 1 auto;min-width:0;}
+  .sc-date{font-weight:600;font-size:.96rem;color:var(--ink);}
+  .sc-note{color:var(--muted);font-weight:400;font-size:.9em;}
+  .sc-time{flex:0 0 auto;font-size:.9rem;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .sc-tag{flex:0 0 auto;font-size:.63rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+          padding:3px 9px;border-radius:999px;background:var(--amber);color:#3a2600;}
+  .sc-row.past{opacity:.46;}
+  .sc-row.next{background:#fdf5e6;}
+  .sc-msg{padding:16px;color:var(--muted);font-size:.92rem;}
+
   @media (max-width:880px){
     .hero .grid,.cols,.fgrid{grid-template-columns:1fr;}
     .steps{grid-template-columns:1fr;}
@@ -472,7 +486,20 @@
       </div>
     </div>
   </section>
-  <section class="band alt" id="minutes-agendas">
+  <section class="band alt" id="schedule">
+    <div class="wrap">
+      <h2 data-en="Meeting schedule" data-zh="会议日程" data-ko="회의 일정" data-es="Calendario de reuniones">Meeting schedule</h2>
+      <p class="lead" data-en="The council's monthly meeting dates. Times are Eastern — the next meeting is highlighted and past meetings are dimmed."
+         data-zh="委员会的月度会议日期。时间为美国东部时间——下一次会议高亮显示，已结束的会议以浅色显示。"
+         data-ko="위원회의 월례 회의 일정입니다. 시간은 동부 표준시이며, 다음 회의는 강조 표시되고 지난 회의는 흐리게 표시됩니다."
+         data-es="Fechas de las reuniones mensuales del consejo. Los horarios son del Este: la próxima reunión se resalta y las reuniones pasadas se atenúan.">The council's monthly meeting dates. Times are Eastern — the next meeting is highlighted and past meetings are dimmed.</p>
+      <!-- Meeting dates come from a Google Sheet — edit the Date / Time cells to update; the site sorts them and marks the next one. -->
+      <div class="sched" id="sched">
+        <div class="sc-msg" data-en="Loading schedule…" data-zh="正在加载日程…" data-ko="일정 불러오는 중…" data-es="Cargando calendario…">Loading schedule…</div>
+      </div>
+    </div>
+  </section>
+  <section class="band" id="minutes-agendas">
     <div class="wrap">
       <h2 data-en="Minutes &amp; agendas" data-zh="会议记录与议程" data-ko="회의록 및 안건" data-es="Actas y órdenes del día">Minutes &amp; agendas</h2>
       <p class="lead" data-en="Documents for the current year, straight from the council's Google Drive. New files appear here automatically."
@@ -513,7 +540,7 @@
 
     </div>
   </section>
-  <section class="band" id="recordings">
+  <section class="band alt" id="recordings">
     <div class="wrap">
       <h2 data-en="Meeting recordings" data-zh="会议录像" data-ko="회의 영상" data-es="Grabaciones de reuniones">Meeting recordings</h2>
       <p class="lead" data-en="Watch recordings of recent council meetings. New videos appear here automatically as they are added to the playlist."
@@ -1049,6 +1076,80 @@
     }).catch(function(){ /* keep the hard-coded cards */ });
   }
   loadMembers();
+
+  /* ============================================================
+     MEETING SCHEDULE — the year's monthly meetings, from a Google Sheet.
+     Edit the Date / Time cells (and optional Note) in:
+     https://docs.google.com/spreadsheets/d/1wCU88TU8vVawlCjMdRFJdwaRPUplN-ZtWECUWK7Pjgo
+     The site sorts the dates, marks the next upcoming meeting, and dims past ones.
+     ============================================================ */
+  var SCHEDULE_SHEET_ID = '1wCU88TU8vVawlCjMdRFJdwaRPUplN-ZtWECUWK7Pjgo';
+  function loadSchedule(){
+    var el = document.getElementById('sched'); if(!el) return;
+    var url = 'https://docs.google.com/spreadsheets/d/' + SCHEDULE_SHEET_ID + '/gviz/tq?tqx=out:json';
+    fetch(url).then(function(r){ return r.text(); }).then(function(txt){
+      var j = JSON.parse(txt.substring(txt.indexOf('{'), txt.lastIndexOf('}') + 1));
+      var rows = (j.table && j.table.rows) || [];
+      var cols = (j.table.cols || []).map(function(c){ return (c.label || '').toLowerCase(); });
+      var di = cols.indexOf('date'); if(di < 0) di = 0;
+      var ti = cols.indexOf('time'); if(ti < 0) ti = 1;
+      var ni = cols.indexOf('note');
+      function ints(v){ return (String(v).match(/-?\d+/g) || []).map(Number); }
+      function ymd(cell){
+        var v = cell && cell.v;
+        if(typeof v === 'string' && v.indexOf('Date(') === 0){ var n = ints(v); return [n[0], n[1], n[2]]; }
+        var m = String((cell && (cell.f || cell.v)) || '').match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+        return m ? [+m[1], +m[2] - 1, +m[3]] : null;
+      }
+      function hm(cell){
+        var v = cell && cell.v;
+        if(typeof v === 'string' && v.indexOf('Date(') === 0){ var n = ints(v); return [n[3] || 0, n[4] || 0]; }
+        var f = String((cell && (cell.f || cell.v)) || '');
+        var m = f.match(/(\d{1,2}):(\d{2})\s*([ap])\.?\s*m\.?/i);
+        if(m){ var h = +m[1] % 12; if(/p/i.test(m[3])) h += 12; return [h, +m[2]]; }
+        m = f.match(/(\d{1,2}):(\d{2})/);
+        return m ? [+m[1], +m[2]] : null;
+      }
+      var items = [];
+      rows.forEach(function(row){
+        var c = row.c || [];
+        var Y = ymd(c[di]); if(!Y) return;
+        var T = hm(c[ti]);
+        var note = (ni >= 0 && c[ni]) ? (c[ni].v || '') : '';
+        items.push({ Y:Y, T:T, note:String(note).trim(), d:new Date(Y[0], Y[1], Y[2], T ? T[0] : 0, T ? T[1] : 0) });
+      });
+      if(!items.length){
+        el.innerHTML = '<div class="sc-msg" data-en="No meetings scheduled yet." data-zh="暂无排定的会议。" data-ko="아직 예정된 회의가 없습니다." data-es="Aún no hay reuniones programadas.">No meetings scheduled yet.</div>';
+        setLang(lang); return;
+      }
+      items.sort(function(a, b){ return a.d - b.d; });
+      var now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      var nextIdx = -1;
+      for(var k = 0; k < items.length; k++){ if(new Date(items[k].Y[0], items[k].Y[1], items[k].Y[2]) >= today){ nextIdx = k; break; } }
+      var LOC = { en:'en-US', zh:'zh-CN', ko:'ko-KR', es:'es-ES' };
+      function attrs(map){ return LANGS.map(function(l){ return ' data-' + l + '="' + dlEsc(map[l]) + '"'; }).join(''); }
+      var html = '';
+      items.forEach(function(it, i){
+        var dmap = {}, tmap = {};
+        LANGS.forEach(function(l){
+          dmap[l] = new Intl.DateTimeFormat(LOC[l], { weekday:'long', year:'numeric', month:'long', day:'numeric' }).format(it.d);
+          tmap[l] = it.T ? new Intl.DateTimeFormat(LOC[l], { hour:'numeric', minute:'2-digit', hour12:true }).format(it.d) : '';
+        });
+        var cls = 'sc-row' + (i < nextIdx ? ' past' : '') + (i === nextIdx ? ' next' : '');
+        var tag = (i === nextIdx) ? '<span class="sc-tag" data-en="Next" data-zh="下一次" data-ko="다음" data-es="Próxima">Next</span>' : '';
+        var note = it.note ? '<span class="sc-note"> · ' + dlEsc(it.note) + '</span>' : '';
+        html += '<div class="' + cls + '"><span class="sc-when"><span class="sc-date"' + attrs(dmap) + '>' + dlEsc(dmap.en) + '</span>' + note + '</span>'
+              + (it.T ? '<span class="sc-time"' + attrs(tmap) + '>' + dlEsc(tmap.en) + '</span>' : '')
+              + tag + '</div>';
+      });
+      el.innerHTML = html;
+      setLang(lang);
+    }).catch(function(){
+      el.innerHTML = '<div class="sc-msg" data-en="Couldn’t load the schedule right now." data-zh="暂时无法加载日程。" data-ko="일정을 불러올 수 없습니다." data-es="No se pudo cargar el calendario ahora.">Couldn’t load the schedule right now.</div>';
+      setLang(lang);
+    });
+  }
+  loadSchedule();
 </script>
 </body>
 </html>
